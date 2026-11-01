@@ -1,0 +1,4 @@
+distance,correct_detection_fraction_all,correct_detection_fraction_eval,median_conf_correct,median_conf_wrong,false_detection_fraction_no_target_all
+50cm,0.816,0.7849056603773585,0.8468277480196328,0.7620508317337571,0.076
+1m,0.598,0.6,0.8246611083319911,0.7583260324559127,0.076
+2m,0.006,0.0,0.7902461567655856,0.0,0.076
