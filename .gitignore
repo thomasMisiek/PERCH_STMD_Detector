@@ -1,8 +1,9 @@
 __pycache__/
 .pytest_cache/
-.ipynb_checkpoints/
+*.py[cod]
 .venv/
-*.pyc
+venv/
 .DS_Store
 outputs/
-*.log
+media/_gif_*/
+media/_tmp*/

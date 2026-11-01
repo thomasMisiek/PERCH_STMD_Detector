@@ -1,30 +1,41 @@
-"""Simple consistency checks; not evidence of real-world detection accuracy."""
 import unittest
 import numpy as np
-import multi_hypothesis as m
-from stmd_model import Detector, apparent_diameter_px
+import sys
+from pathlib import Path
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+import stmd_model as s
+import benchmark as b
 
-class TestDemo(unittest.TestCase):
-    def test_projection_scales_with_distance(self):
-        self.assertGreater(apparent_diameter_px(6, 0.5), apparent_diameter_px(6, 1.0))
-        self.assertGreater(apparent_diameter_px(6, 1.0), apparent_diameter_px(6, 2.0))
+class STMDTests(unittest.TestCase):
+    def test_projected_target_shrinks_with_distance(self):
+        values=[s.apparent_diameter_px(6,d) for d in (.5,1,2)]
+        self.assertTrue(values[0]>values[1]>values[2]>0)
+        self.assertAlmostEqual(values[2],.655,places=2)
 
-    def test_trajectory_stays_in_frame(self):
-        p=m.fast_trajectory(250)
-        self.assertEqual(p.shape, (250,2))
-        self.assertTrue(np.all((p >= 12) & (p < 308)))
+    def test_subpixel_target_changes_at_least_one_output_pixel(self):
+        frame=np.full((320,320,3),200,dtype=np.uint8)
+        s.stamp(frame,(165,68),s.apparent_diameter_px(6,2))
+        self.assertLess(int(frame[68,165,0]),200)
+        self.assertGreater(int(frame[68,165,0]),0)  # fractional coverage, not binary dark pixel
 
-    def test_no_prior_initialization(self):
-        tracker=m.MultiHypothesis(np.ones(4))
-        self.assertEqual(len(tracker.tracks), 0)
-        r, tracks, _ = tracker.step([np.zeros((320,320), np.float32) for _ in range(4)])
-        self.assertFalse(r['detected'])
-        self.assertEqual(len(tracks), 0)
+    def test_detector_blank_initialization(self):
+        d=s.Detector()
+        frame=np.full((320,320,3),150,dtype=np.uint8)
+        first=d.step(frame)
+        self.assertEqual(first['peak'],0)
+        second=d.step(frame)
+        self.assertTrue(np.isfinite(second['peak']))
 
-    def test_first_frame_neural_memory_empty(self):
-        detector=Detector()
-        response=detector.step(np.full((320,320,3), 127, np.uint8))
-        self.assertEqual(response['peak'], 0)
+    def test_control_and_target_have_same_sensor_format(self):
+        frame=np.full((2,320,320,3),210,dtype=np.uint8)
+        with_dot,ground_truth=s.make_frames(frame,2.0)
+        self.assertEqual(with_dot.shape,frame.shape)
+        self.assertEqual(ground_truth.shape,(2,2))
+        self.assertTrue(np.any(with_dot!=frame))
 
-if __name__ == '__main__':
-    unittest.main()
+    def test_benchmark_window(self):
+        self.assertEqual(b.N,500)
+        self.assertEqual(b.FPS,25.0)
+        self.assertEqual(b.SIDE,320)
+
+if __name__=='__main__':unittest.main()

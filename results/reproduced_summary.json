@@ -1,0 +1,32 @@
+[
+  {
+    "model": "earlier tuned two-pathway",
+    "source": "original",
+    "frames": 500,
+    "distance": "2m",
+    "diameter_px": 0.6548084176149223,
+    "all_correct": 0.2,
+    "eval_correct_100_249": 0.3333333333333333,
+    "eval_detect_100_249": 0.3333333333333333
+  },
+  {
+    "model": "earlier tuned two-pathway",
+    "source": "original",
+    "frames": 500,
+    "distance": "1m",
+    "diameter_px": 1.3096138886096451,
+    "all_correct": 0.578,
+    "eval_correct_100_249": 0.7666666666666667,
+    "eval_detect_100_249": 0.7666666666666667
+  },
+  {
+    "model": "earlier tuned two-pathway",
+    "source": "original",
+    "frames": 500,
+    "distance": "50cm",
+    "diameter_px": 2.6192042047350332,
+    "all_correct": 0.78,
+    "eval_correct_100_249": 0.88,
+    "eval_detect_100_249": 0.88
+  }
+]

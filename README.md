@@ -1,133 +1,125 @@
-# Insect-inspired small-target motion detection (STMD)
+# Tuned small-target motion detector (STMD)
 
-**A reproducible demonstration of detecting tiny moving targets in a cluttered, moving indoor scene.**
+**A lightweight, insect-inspired vision demonstration for detecting tiny moving targets against a moving, cluttered background.**
 
-This repository explores **Small Target Motion Detector (STMD)** principles from insect vision as an efficient way to detect moving objects only a few pixels—or less—across. One potential application is **PERCH**, a small flying robot concept that aims to visually detect and pursue insect prey. The purpose of this repository is to demonstrate the *perception algorithm*, not to claim an integrated autonomous robot or a field-validated mosquito detector.
+The motivation is **PERCH**, a proposed flying microrobot that could use small-target motion detection to locate insect prey. This repository specifically demonstrates **the visual detection algorithm**, not insect recognition or successful capture by a flying robot.
 
-## Demo: simulated mosquito at 1 metre
+## Demo — simulated 6 mm target at 1 m
 
-![1 m STMD demonstration: original 1280×720 RGB footage with the injected black dot at left, simulated 320×320 DVS-like visualization with neural detections at right](media/stmd_1m_demo_HD.gif)
+![Tuned STMD example: original HD indoor footage with an injected small black dot (left); 320 x 320 simulated DVS-style visualization with target detections (right)](media/stmd_tuned_1m_demo.gif)
 
-**Left:** high-resolution indoor RGB video (**1280 × 720**, downscaled directly from the original 1920 × 1080 footage, never enlarged from the 320-pixel crop) with an injected black dot representing a target of approximately **6 mm at 1 m** (about **1.31 pixels** in the detector's 320-pixel input). **Right:** the **320 × 320 simulated DVS-style visualization**, enlarged by nearest-neighbour scaling *for display only* (ON-like activity in green, OFF-like in magenta), with the detector's accepted estimate in yellow and other competing hypotheses in blue. The confidence shown in the right panel is an *uncalibrated evidence score*, not a probability of mosquito presence.
+[**Watch the 4-second HD MP4**](media/stmd_tuned_1m_HD_short.mp4) · [**Watch the full 20-second HD experiment**](media/stmd_tuned_1m_HD_20s.mp4) · [Still image](media/stmd_tuned_1m_HD_still.jpg)
 
-[Play the 4-second HD RGB + DVS MP4](media/stmd_1m_short_HD.mp4) · [Full 20-second, four-panel HD RGB + DVS demonstration](media/stmd_1m_four_panel_HD.mp4) · [HD still frame](media/stmd_1m_frame_HD.jpg)
+- **Left:** the original 1920 × 1080 indoor footage, shown at **1280 × 720** with a black synthetic target added. The left image is **not enlarged from 320 × 320**.
+- **Right:** a **320 × 320 frame-derived simulated DVS-style visualization**, scaled up for display only. Green marks brightness increases, magenta marks decreases. The yellow circle/arrow indicates the detector output; the **evidence** annotation is a relative detector score, **not a calibrated probability**.
+- The **detector's actual input is 320 × 320 grayscale intensity frames**, not asynchronous DVS events. This is **not a GENX320 sensor recording** or a full physical event-camera simulator. The DVS-style view is generated **for visualization** using successive grayscale frames and log-intensity differences with thresholding: `ON = max(log(1+I_t) - log(1+I_{t-1}) - 0.045, 0)`, with a corresponding `OFF` term for decreasing brightness. An STMD activity heatmap and detection marker are overlaid.
 
-The full demonstration also has a **no-target control** in the bottom row. The GIF is an illustrative excerpt from that full video; it is not a substitute for the quantitative evaluation below. **No green ground-truth trace** is added in these videos.
-
-> **Sensor distinction:** The display is a simulation made from successive conventional video frames; it is **not data recorded by a Prophesee GENX320**. The detector itself processes greyscale video, not asynchronous DVS events. The **model input and simulated DVS raster** are **320 × 320**, comparable in pixel count to the GENX320. In the demo, only the **RGB panel** uses the high-resolution source. DVS output is resized to match its onscreen height; this adds no event-camera detail.
+The animated excerpt is 4 seconds of the original 25 fps sequence. The full 20 s video uses the 14.6 s source followed by 5.4 s **in reverse order**, preserving the original frame rate (this is not extra real footage). No ground-truth trajectory trace is drawn.
 
 ## Architecture
 
-![STMD-inspired motion detector architecture](media/architecture.svg)
+![Single-row diagram of the tuned STMD: retina, motion compensation, Gaussian spatial filtering, two neural-evidence pathways, direction-tuned integration, and global readout](media/architecture.svg)
 
-The diagram depicts the code's actual processing blocks. It is a **hybrid, biologically inspired model**, combining STMD-like motion-sensitive populations with standard computer-vision components:
+**[View larger PNG](media/architecture.png)** · [Editable figure source](docs/draw_architecture.py)
 
-1. **Retina-like preprocessing / dark target evidence:** local spatial contrast, narrow-versus-broad Gaussian filtering and dark motion residuals favour small moving objects.
-2. **Background and self-motion handling:** global frame shift is estimated using phase correlation; a fourth parallel channel uses **Farneback optical flow** to align local image motion and identify unexplained dark residuals.
-3. **Three STMD-like evidence populations:** a broad response, a dense-motion-inhibited response, and a texture-tolerant response. These integrate spatially and temporally over candidate motion directions.
-4. **Competing predictions:** local evidence maxima can initiate up to **nine** target hypotheses, each with position, velocity, decaying evidence and a short hit/miss history. The bank starts **empty**—there is no initial target coordinate.
-5. **Readout and confidence:** the leading supported hypothesis provides a location, motion direction and a multi-factor *heuristic confidence*; other hypotheses remain available and may take over if the leader loses support.
+The simplified, **six-stage** pipeline reflects the included code:
 
-The hypotheses are **not** a trained deep neural network, and this code is **not** a full biophysical reconstruction of insect neurons. A concise signal-level explanation, equations and limitations are in [Methods](docs/METHODS.md). The editable [Graphviz source for the diagram](media/architecture.dot) is included.
+1. **Retina / input:** grayscale 320 × 320 frames (center crop, following area downsampling).
+2. **Egomotion compensation:** estimate global shift by *phase correlation*, align a slow-running background model and compute positive dark residuals (`predicted_background - current_frame`).
+3. **Spatial small-target selectivity:** positive difference between narrow and broad Gaussian responses (σ = **0.55** and **3.0** detector pixels), inhibited by a *Gaussian-surround texture statistic* (surround σ = **3.0**).
+4. **Two neural-evidence pathways:** a broad response and a pathway with additional local motion-density inhibition.
+5. **Direction-tuned temporal facilitation:** 14 candidate 2D velocity shifts with leaky integration (`decay = 0.85` per frame).
+6. **Readout:** maximum evidence across directions and the two pathways; detection when that pathway's normalized activity exceeds its global control-calibrated threshold. Report position, preferred direction and an uncalibrated evidence score.
 
-## Results on one indoor test clip
+**No multiple-target hypothesis bank is used here.** This is the original **tuned two-pathway model**, not the later competing-hypothesis version. It is an **STMD-inspired hybrid**, not a full retinal ON/OFF-correlator model or biologically exact neuron simulation. Read the [technical methods](docs/METHODS.md) for details.
 
-| Condition | Projected target diameter | Correct localization, frames 100–364 |
-|---|---:|---:|
-| Mosquito-size target at **50 cm** | ~2.62 px | **78.5%** |
-| Mosquito-size target at **1 m** | ~1.31 px | **60.0%** |
-| Mosquito-size target at **2 m** | ~0.65 px | **0.0%** |
-| **No target** control | — | **2.6% false-detection frames** |
+## Evaluation — reproduced on original footage
 
-![Measured accuracy and no-target false alarms](media/accuracy.png)
+| Distance to target | Apparent diameter at 320 px | Correct detections (frames 100–249) |
+|:--|--:|--:|
+| **50 cm** | **2.62 px** | **88.0%** |
+| **1 m** | **1.31 px** | **76.7%** |
+| **2 m** | **0.65 px** | **33.3%** |
+| No-target control | — | **0.0% false detections** |
 
-A correct localization requires a committed detection within **8 pixels** of the injected target. The model does **not** receive target coordinates during inference; these coordinates are used only to score results afterward. Neural response scales were calibrated on a different interval of the **same no-target clip** (frames 25–99), so these results are **scene-specific**; they should not be interpreted as independent real-world generalization or proof of 2 m mosquito detection. The 1 m example is deliberately challenging and includes misses.
+These values are **independently reproduced by rerunning this tuned implementation on the original video**, not results from the competing-hypothesis implementation. A detection is correct only when its global peak exceeds the preselected threshold and its position is within **8 pixels** of the synthetic target. The 0.0% no-target rate applies **only to frames 100–249** (the full 500-frame control has an **11.6%** detection rate). See [per-frame CSVs](results/) and [reproduced summary](results/reproduced_summary.json).
 
-## Run locally
+**Caveats:** This is one indoor scene, one target trajectory, and a synthetic black disk, not live mosquitoes. The target follows a smooth, fairly simple simulated path; results **cannot be generalized to erratic prey flight or real hardware**. The initial 100 frames of the dot-free video are used to set two scalar thresholds, and the evaluation interval is frames 100–249; this does not establish generalization to new environments. The detector processes grayscale intensity rather than physical DVS events.
 
-**Requirements:** Python 3.10+, `ffmpeg` for MP4 rendering, and the packages in `requirements.txt`.
+### How a subpixel dot is simulated
+
+The real indoor recording is resized using **`cv2.INTER_AREA`**, preserving relative area contributions during downsampling. For the model input, the 1920 × 1080 source is scaled to approximately **569 × 320**, then **center-cropped to 320 × 320** without changing the aspect ratio.
+
+**After resizing**, a 6 mm black target is rendered into the 320 × 320 input, with apparent diameter estimated from an assumed **84° horizontal field of view**, using a **12× supersampled disk → `INTER_AREA` fractional pixel coverage → a small Gaussian σ = 0.42 px** → alpha composition. This lets a subpixel black object affect the intensity of one or more sensor pixels instead of disappearing. There is **no additional blur applied to the stimulus before detection**. The σ = 0.42 px is the tuned benchmark's original rendering parameter, retained so the results remain reproducible; changing it defines a different experiment.
+
+The 84° field of view is an **assumption** rather than a measured intrinsic parameter of the source camera. These distances are simulated apparent angular sizes, not measured real-world detection distances.
+
+## Install and run
+
+Python **3.10+**, [FFmpeg](https://ffmpeg.org/) installed and on your `PATH` (for video generation):
 
 ```bash
 python -m venv .venv
-# Linux / macOS
-source .venv/bin/activate
-# Windows PowerShell: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
+# Windows:    .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Run the default **1 m** experiment on the included indoor clip:
+**Reproduce all three distances and the no-target control** (outputs written to `outputs/`):
 
 ```bash
-python run_demo.py --distance 1m
+python benchmark.py
 ```
 
-Output is written to `outputs/`: side-by-side MP4, per-frame detections, and a metrics CSV. The **default is the original 365-frame source at native 25 fps (14.6 s), without slow motion or reversed footage**.
-
-To run all three distances and recreate the longer 20-second convention from the earlier benchmark (forward footage followed by a reversed segment, at unchanged frame rate):
+Or select one distance:
 
 ```bash
-python run_demo.py --all --frames 500
+python benchmark.py --distance 2m
 ```
 
-To use another video:
+To also regenerate legacy compact four-panel videos:
 
 ```bash
-python run_demo.py --input /path/to/indoor_video.mp4 --distance 1m
+python benchmark.py --distance 1m --render
 ```
 
-To run basic consistency tests:
+To regenerate the **high-definition 1 m two-panel demonstration and README GIF**:
 
 ```bash
-python -m unittest discover -s tests -v
+python render_hd.py
 ```
 
-To regenerate the high-resolution repository demo after updating the model, first render the 320-pixel four-panel video (`python run_demo.py --distance 1m --frames 500 --out outputs/`), then use `make_hd_media.py` with that render placed at `media/stmd_1m_four_panel.mp4`. The high-resolution script overlays the known *synthetic* dot on the original HD footage only for visualization, while the detections continue to come from the unchanged 320-pixel model.
+For faster media generation (short clip and GIF only): `python render_hd.py --short-only`. Source footage is in [`data/`](data/). The source file is the **original**, not the compressed substitute that affected the earlier GitHub model's measurements.
 
-A short [Jupyter notebook](notebooks/STMD_demo.ipynb) introduces the experiment and plots its evaluation results. The original detailed per-frame results are in [`results/`](results/).
+Unit tests: `python -m unittest discover -s tests -v`.
 
 ## Repository structure
 
 ```text
-.
-├── README.md                 # Overview, embedded demo and papers
-├── run_demo.py              # Reproducible command-line entry point
-├── stmd_model.py            # STMD-like spatial/temporal motion populations
-├── multi_hypothesis.py      # Optical-flow channel and predictive hypothesis bank
-├── render_and_report.py    # Original 20-second benchmark reproduction
-├── make_hd_media.py        # Rebuild HD RGB + 320px DVS GitHub preview
-├── docs/METHODS.md          # Methods, mathematics and limitations
-├── media/
-│   ├── stmd_1m_demo_HD.gif # Short, sharper RGB left / DVS right demo
-│   ├── stmd_1m_short_HD.mp4
-│   ├── stmd_1m_four_panel_HD.mp4
-│   ├── stmd_1m_four_panel.mp4 # Legacy 320px panel render, input to HD rebuild
-│   ├── architecture.svg
-│   └── architecture.dot
-├── data/                    # Example indoor source video and rights notice
-├── results/                 # Evaluation tables for all three conditions
-├── notebooks/STMD_demo.ipynb
-└── tests/test_stmd.py
+README.md
+stmd_model.py               # exact tuned detector + subpixel-dot renderer
+benchmark.py                # calibrated 500-frame experiment, CSV and metrics
+render_hd.py                # HD original + simulated DVS comparison media
+requirements.txt
+notebooks/STMD_tuned_demo.ipynb
+docs/METHODS.md
+docs/draw_architecture.py   # regenerates the single-row architecture
+media/                      # README GIF, HD MP4s, diagram
+results/                    # original reproduced frame-by-frame measurements
+data/source_indoor_walking.mp4
 ```
 
-## Connection to insect vision and papers
+## Scientific references
 
-Insect **small-target motion detector neurons** respond selectively to small moving features even against textured visual backgrounds. Work on the **elementary STMD (ESTMD)** model explains dark-target selectivity via interactions between OFF and ON signals; **direction-selective STMD** models explore spatial and temporal correlation; dragonfly recordings also demonstrate **predictive gain modulation** that enhances responses near expected target trajectories.
+These papers provide the biological and computational inspiration. **The code does not implement their full published neural circuits.**
 
-This repository is **inspired by** those findings, not an implementation of every proposed anatomical connection:
+1. **Wiederman, Shoemaker & O'Carroll (2013)** — *Correlation between OFF and ON channels underlies dark target selectivity in an insect visual system*, *Journal of Neuroscience*, 33:13225–13232. [https://doi.org/10.1523/JNEUROSCI.1277-13.2013](https://doi.org/10.1523/JNEUROSCI.1277-13.2013)
+2. **Wang, Peng & Yue (2020)** — *A Directionally Selective Small Target Motion Detecting Visual Neural Network in Cluttered Backgrounds*, *IEEE Transactions on Cybernetics*, 50:1541–1555. [https://doi.org/10.1109/TCYB.2018.2869384](https://doi.org/10.1109/TCYB.2018.2869384)
+3. **Wang, Peng, Zheng & Yue (2020)** — *A Robust Visual System for Small Target Motion Detection Against Cluttered Moving Backgrounds*, *IEEE Transactions on Neural Networks and Learning Systems*, 31:839–853. [https://doi.org/10.1109/TNNLS.2019.2910418](https://doi.org/10.1109/TNNLS.2019.2910418)
+4. **Wiederman, Fabian, Dunbier & O'Carroll (2017)** — *A predictive focus of gain modulation encodes target trajectories in insect vision*, *eLife*, 6:e26478. [https://doi.org/10.7554/eLife.26478](https://doi.org/10.7554/eLife.26478)
 
-1. **Wiederman, Shoemaker & O'Carroll (2013)** — *Correlation between OFF and ON channels underlies dark target selectivity in an insect visual system.* *Journal of Neuroscience*, 33(32), 13225–13232. [DOI: 10.1523/JNEUROSCI.1277-13.2013](https://doi.org/10.1523/JNEUROSCI.1277-13.2013)
-2. **Wang, Peng & Yue (2020; online 2018)** — *A Directionally Selective Small Target Motion Detecting Visual Neural Network in Cluttered Backgrounds.* *IEEE Transactions on Cybernetics*, 50(4), 1541–1555. [DOI: 10.1109/TCYB.2018.2869384](https://doi.org/10.1109/TCYB.2018.2869384)
-3. **Wiederman, Fabian, Dunbier & O'Carroll (2017)** — *A predictive focus of gain modulation encodes target trajectories in insect vision.* *eLife*, 6:e26478. [DOI: 10.7554/eLife.26478](https://doi.org/10.7554/eLife.26478)
+## Limitations and licensing
 
-## Scope and limitations
+The design supports research into STMD-like small-target motion detection for future **PERCH** vision systems, but **does not demonstrate real event-camera input, mosquito identification, autonomous pursuit, or insect capture**. The 320 px simulated DVS rendering should not be interpreted as an optical/sensor-accurate GENX320 emulator.
 
-- This is a **research demonstration**, not validated insect identification, autonomous interception, or real-hardware flight control.
-- The right panel is **frame-derived DVS-style visualization**, not a true simulated event-camera sensor model with asynchronous events and timestamps. The current detection pipeline uses ordinary intensity frames.
-- Confidence is a **heuristic evidence signal**, not a calibrated detection probability.
-- The example target is a **black disk with projected apparent size**; actual mosquito wings, motion blur, exposure, and contrast can produce different visual signatures.
-- Performance falls markedly at **2 m** and on some textured trajectories. See [Methods](docs/METHODS.md) and [`results/`](results/) for details.
-- The local optic-flow channel and hypothesis association are standard computer vision / tracking components rather than experimentally confirmed neural circuits.
-
-## Licensing and media
-
-Code is provided under [MIT](LICENSE). **The example footage and derived demonstration clips are separate media assets:** before publishing to a public GitHub repository, confirm that you hold the appropriate rights to distribute them. The example footage here was provided for this demonstration, but its original licensing provenance has **not been independently established**. See [video notice](data/VIDEO_NOTICE.md). The MIT license must not be assumed to cover third-party footage.
+Code is MIT licensed. The video and derived media may be subject to separate rights; check [`data/VIDEO_NOTICE.md`](data/VIDEO_NOTICE.md) before publishing the footage publicly. The code license does not automatically grant rights to any third-party recording.

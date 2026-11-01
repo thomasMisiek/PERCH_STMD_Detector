@@ -1,58 +1,89 @@
-# Methods and implementation notes
+# Technical methods — original tuned two-pathway STMD
 
-## Experimental setup
+This describes the **exact implementation used for the reproduced values**. The demonstration is designed for small, dark, moving synthetic targets and is inspired by insect STMD mechanisms, without claiming an anatomically accurate full ESTMD/DSTMD circuit.
 
-The input is a frame-based, indoor video centre-cropped to **320 × 320** at **25 frames/s**. The video has a moving camera, textured furniture, and a moving person. An artificial dark target is overlaid at an independent image position. Both target-present and target-absent versions are processed using the same detector parameters.
+## Preprocessing
 
-The diameter is set from a 6 mm target length projected into 320 sensor pixels under an approximate 84° field of view:
+- Read original 1920×1080 video at 25 fps.
+- `cv2.resize(frame, (round(width*320/height),320), interpolation=cv2.INTER_AREA)` followed by central 320×320 crop. No stretching to square.
+- For the benchmark, extend the 365 original frames to 500 by reversing the last 135 frames. No temporal slowing. The primary evaluation uses frames 100–249 within original forward footage.
+- For each target distance, inject a 6 mm black synthetic target after spatial downsampling. Its apparent diameter is calculated from a nominal 84° field of view as implemented in `stmd_model.apparent_diameter_px`.
+- Supersample the target disk 12× and area-integrate its coverage. Gaussian smoothing of the coverage mask is **σ=0.42 pixels**, not a large image blur; this was retained unchanged to preserve the original benchmark.
 
-\[
-\alpha = 2\arctan\left(\frac{L}{2d}\right), \qquad
-s_{px} \simeq 320\frac{\alpha}{84^\circ}.
-\]
+## Motion-compensated dark residual
 
-The projected diameters are approximately **2.62 px** at 50 cm, **1.31 px** at 1 m, and **0.65 px** at 2 m. This is a simplified angular-size approximation, not a calibrated optical simulation including exact lens distortion, exposure, sensor noise or insect wing dynamics. The target is subpixel-rendered using integrated coverage and image blur.
+The detector maintains a background image `B` and previous gray frame `I_prev`.
 
-## Motion-sensitive populations
+```
+(dx,dy)       = cv2.phaseCorrelate(I_prev, I_current)[0]
+B_predicted   = warp(B, dx, dy)
+residual      = max(B_predicted - I_current, 0)
+response      = max(Gauss(residual, sigma=0.55) - Gauss(residual, sigma=3.0), 0)
+B_next        = 0.976 * B_predicted + 0.024 * I_current
+```
 
-The implementation is in `stmd_model.py` and `multi_hypothesis.py`.
+The phase-correlation step is conventional computer vision; the Gaussian center/surround-like response emphasizes localized dark deviations. This **does not** reproduce photoreceptor-level ON/OFF synapses.
 
-1. **Dark residual**: estimate a slowly updated background, align it with the current frame via phase correlation, and emphasize pixels unexpectedly darker than the aligned background.
-2. **Small-target spatial response**: difference of narrow and broad Gaussian filters on that residual.
-3. **Texture-adaptive spatial inhibition**: calculate surround texture outside the receptive-field centre and reduce responses from heavily textured areas.
-4. **Direction-selective temporal integration**: shift and leaky-integrate response maps along multiple candidate velocities: `A_v(t) = decay * shift(A_v(t-1), v) + evidence(t)`. This favours persistent motion consistent with a velocity.
-5. **Parallel channels**: broad response, dense-motion inhibition, more texture-tolerant filtering, and an additional conventional optical-flow-registration residual channel. The last channel uses Farneback optical flow and is not a neural circuit reconstruction.
+## Texture-sensitive surround inhibition
 
-Each channel is normalized using response scales estimated from the first 100 frames of the no-target clip (99th percentile over frames 25–99). These **calibration frames are separate from the later evaluation window**, but the normalization is still scene-specific and should not be mistaken for independent generalization.
+The detector estimates the mean and standard deviation of present-frame intensities in a Gaussian surround of sigma 3 px while excluding a radius around each central receptive field. It then forms:
 
-## Competing motion hypotheses
+```
+evidence = response * exp(-surround_std / 7.0)
+```
 
-At each frame the model selects strong local maxima across the four response maps. Unmatched peaks can initiate up to **nine separate target hypotheses**, each with position, velocity, leaky support, directional consistency, and hit/miss history. Hypotheses are associated with subsequent peaks by predicted position; supported tracks gain evidence, unsupported tracks decay and disappear. The model starts with **no seeded target coordinate and no hypotheses**. This is de novo initiation with temporal priors retained afterward.
+The tuned model has **two parallel populations**:
 
-The highest-confidence track can be accepted as a detection. Confidence is a logistic, **uncalibrated heuristic** derived from neural evidence strength, persistence, direction consistency, track age, estimated motion and missed updates. It is not a true probability of insect presence.
+- **Broad:** this texture-suppressed evidence, lightly smoothed at sigma 0.35 px.
+- **Selective:** additionally multiplies by `exp(-16.0 * motion_density)`, where motion density is a Gaussian-smoothed binary residual mask (`residual > 10` intensity units).
 
-## DVS-style visualization
+## Directional motion populations and temporal facilitation
 
-The right-hand display is an **illustration of event-camera output**, not a real Dynamic Vision Sensor recording. For adjacent greyscale video frames, changes are computed in log-luminance:
+For each of 14 motion velocities in the grid `vx in {-1,-0.5,0,.5,1}` and `vy in {-0.5,0,.5}`, excluding `(0,0)`, the response is propagated using a spatial shift and then integrated:
 
-\[
-\Delta L_t(x,y) = \log(1+I_t(x,y)) - \log(1+I_{t-1}(x,y)).
-\]
+```
+A_v(t) = 0.85 * warp(A_v(t-1), v_x, v_y) + evidence(t)
+```
 
-Positive changes above a display threshold are coloured green (ON-like); negative changes are magenta (OFF-like). The display is accumulated once per video frame and augmented with a faint neural-response heatmap, confidence, accepted detection, and alternative predictive tracks.
+The model computes the maximum across channels at each pixel, suppresses a 12-pixel border, and reads the global maximum and its associated velocity. These are **motion-aligned recurrent integration populations** (not delayed input multipliers or a trained neural network). In particular, there are **no competing trajectories/hypothesis objects** or a target identity tracker.
 
-**Important:** The inference model is fed ordinary video frames and **does not operate on asynchronous GENX320 event packets**. A real event-camera implementation would need proper timestamped events, sensor bias/contrast thresholds, and latency evaluation.
+## Thresholds and output
 
-## Metrics and known limitations
+Calibrate two scalar global thresholds using a **dot-free control**: the 99th percentile of each pathway's maximal activity over frames 25–99, clipped below at 1e-6. Thresholds are fixed for all target distances.
 
-Synthetic ground-truth positions are used **only after inference**. A correct detection means the committed detection is within **8 pixels** of the injected dot. The main evaluation interval is frames **100–364**, following calibration on the no-target clip.
+At each frame, divide each pathway's global maximum by its threshold, choose the pathway with largest normalized activity, and accept if this normalized score is at least 1. The exported **confidence** is a logistic mapping `sigmoid(4*(normalized_score-1))`; it is **not a calibrated probability**.
 
-The existing benchmark records approximately **78.5%** correct at 50 cm, **60.0%** at 1 m and **0%** at 2 m over the evaluation window; the no-target false-detection fraction is approximately **2.6%**. These results concern one clip and target path, not generalized performance. At 1 m, the target is approximately 1.3 pixels across, so aliasing, local texture, motion and lighting materially affect detection. The model must not be treated as an onboard field-validated insect tracker.
+A correct accepted detection must fall within 8 pixels of the synthetic target coordinate. The coordinate exists only for target injection and evaluation, not for detector inference.
 
-The original 20-second benchmark video preserves the source **25 fps speed** but extends a **14.6-second** clip by reversing the later portion, not by slowing it down. `run_demo.py` defaults to 365 forward-only frames, to preserve the source's native continuous motion.
+## Results and validity
 
-## Biological connections
+Exactly reproduced, original 1920×1080 footage, 25 fps, frames 100–249:
 
-This is best described as an **STMD-inspired hybrid system**, not a faithful full neural STMD or a reconstructed dragonfly connectome. The biology informs small-target selectivity, motion-sensitive populations, and temporal predictive facilitation. Conventional optical flow, phase correlation, threshold calibration, local maxima selection and multi-object association are engineering approximations.
+| distance | apparent size | correct |
+|---|---:|---:|
+|50 cm|2.62 px|88.0%|
+|1 m|1.31 px|76.7%|
+|2 m|0.65 px|33.3%|
 
-See references in the main README.
+No-target false alarms in that 150-frame interval: 0.0%; across 500 frames: 11.6%.
+
+These results are **trajectory- and scene-specific**, not an unbiased validation of live mosquito detection or performance on a physical DVS camera. Threshold calibration is performed on the same background scene as evaluation. The source camera's physical field of view was not established. Video compression and synthetic dot drawing parameters materially affect subpixel performance.
+
+## DVS visualization (not detector input)
+
+The side-by-side HD demo renders one 320×320 image per conventional video frame by differencing *log(1+gray)* values:
+
+```
+d = log1p(I_current) - log1p(I_previous)
+ON  = max(d - 0.045, 0)
+OFF = max(-d - 0.045, 0)
+```
+
+The ON and OFF values are contrast-expanded for display. Green=ON, magenta=OFF; a faint network response heatmap and a readout glyph are overlaid. It is **not asynchronous DVS data with event timestamps**, and detector accuracy numbers refer to the conventional intensity-frame model, not to a DVS-driven algorithm.
+
+## Reference papers
+
+- Wiederman, Shoemaker & O'Carroll (2013), DOI: https://doi.org/10.1523/JNEUROSCI.1277-13.2013
+- Wang, Peng & Yue (2020), DOI: https://doi.org/10.1109/TCYB.2018.2869384
+- Wang, Peng, Zheng & Yue (2020), DOI: https://doi.org/10.1109/TNNLS.2019.2910418
+- Wiederman et al. (2017), DOI: https://doi.org/10.7554/eLife.26478
