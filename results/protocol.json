@@ -1,0 +1,32 @@
+{
+  "target_diameters_mm": [
+    7,
+    20
+  ],
+  "distance_m": [
+    0.5,
+    1,
+    2,
+    3,
+    4
+  ],
+  "conditions": {
+    "still background": 0,
+    "moving background": 1
+  },
+  "seeds": [
+    173,
+    281
+  ],
+  "frame_rate": 25,
+  "evaluated_frames": "100..364 inclusive per trial",
+  "sensor_resolution": [
+    320,
+    320
+  ],
+  "assumed_field_of_view_deg": 84,
+  "common_calibration": "target-free original moving video",
+  "readout": "top pooled STMD candidate, no additional memory, forced-choice",
+  "target": "synthetic black circular disk, area-integrated and blurred",
+  "caveat": "Background replay speed is not measured physical camera velocity"
+}

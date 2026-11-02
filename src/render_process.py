@@ -3,11 +3,12 @@
 The simulated DVS panel is VISUALIZATION ONLY and does not feed neural input.
 The 24 channel tiles plot A_k - mean_j(A_j), a visualization of actual
 computed recurrent arrays; the model itself pools the unmodified A_k arrays.
-Ground truth (red circle) is drawn ONLY on the input panel; never used by model.
+Ground truth (red circle) is shown on input and final comparison panel only; never used by model.
 """
 from pathlib import Path
 import cv2, numpy as np
-from experiment import read_source,inject
+from experiment import read_source
+from benchmark_sizes import inject_size
 from trajectories import generate_trajectory
 from motion_bank_benchmark_fast import velocity_set,calibrate_custom,MotionBankDetector
 from comparison.multi_hypothesis import CONFIGS,LocalFlowResidual,candidates_from_maps
@@ -98,23 +99,23 @@ def labelled_panel(img,name,foot='',circle=None,dot=None):
     if foot:cv2.putText(out,foot,(7,TITLE+S+15),cv2.FONT_HERSHEY_SIMPLEX,.35,(65,65,65),1,cv2.LINE_AA)
     if circle is not None:
         x,y=circle;pt=(int(round(x*S/320)),int(round(y*S/320))+TITLE)
-        cv2.circle(out,pt,16,(5,5,230),1,cv2.LINE_AA)
+        cv2.circle(out,pt,15,(5,5,230),2,cv2.LINE_AA)
     if dot is not None and np.isfinite(dot[0]):
         x,y=dot;pt=(int(round(x*S/320)),int(round(y*S/320))+TITLE)
         cv2.circle(out,pt,11,(0,230,255),2,cv2.LINE_AA)
     return out
 
 
-def main(seed=173,distance=1.0):
+def main(seed=173,distance=1.0,target_mm=7):
     base=read_source()
     path=generate_trajectory(seed,len(base))
-    frames=inject(base,path,distance)
+    frames=inject_size(base,path,distance,target_mm)
     scales=calibrate_custom(base,V)
     ds=[MotionBankDetector(V,**cfg) for cfg in CONFIGS]
     local=LocalFlowResidual()
     mem=PredictiveField(**CFG)
     width=(S+8)*4+8; height=(TITLE+S+FOOT+8)*2+8
-    outpath=OUT/'stmd_actual_pipeline_1m.mp4'
+    outpath=OUT/'stmd_actual_pipeline_1m_7mm.mp4'
     writer=cv2.VideoWriter(str(outpath),cv2.VideoWriter_fourcc(*'mp4v'),25,(width,height))
     if not writer.isOpened():raise RuntimeError('Cannot open MP4 output')
     prev=None
@@ -137,13 +138,13 @@ def main(seed=173,distance=1.0):
         for x,y,strength,channel in cand[:18]:
             cv2.circle(pool,(int(x),int(y)),3,(45,240,100),1,cv2.LINE_AA)
         panels=[
-            labelled_panel(fr,'1  RGB frame (target)',f'frame {t} | ground truth ring',circle=path[t]),
-            labelled_panel(dvs_view(fr,prev),'2  simulated DVS','display only; NOT model input'),
-            labelled_panel(activity_rgb(evidence),'3  small-target detector','computed from intensity frames'),
+            labelled_panel(fr,'1  Original input', 'target shown with red circle',circle=path[t]),
+            labelled_panel(dvs_view(fr,prev),'2  Simulated DVS'),
+            labelled_panel(activity_rgb(evidence),'3  Small-target detector'),
             labelled_panel(mosaic,'4  24 computed motion maps','signed response; pooled-peak ROI'),
             labelled_panel(pool,'5  fused sensory response',f'{len(cand)} candidate peaks (green)'),
-            labelled_panel(activity_rgb(pred['prior'],1.0),'6  Predictive spatial map','spatial activity only; no overlays'),
-            labelled_panel(fr,'7  Predicted target position','yellow ring = model prediction',dot=(pred['x'],pred['y']))
+            labelled_panel(activity_rgb(pred['prior'],1.0),'6  Predictive spatial map'),
+            labelled_panel(fr,'7  Predicted target position','red = truth  |  yellow = prediction',circle=path[t],dot=(pred['x'],pred['y']))
         ]
         canvas=np.full((height,width,3),235,np.uint8)
         for i,p in enumerate(panels):
