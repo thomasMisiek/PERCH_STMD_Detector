@@ -1,0 +1,12 @@
+{
+  "model": "grid24",
+  "predictive_field": {
+    "decay": 0.85,
+    "gain": 0.3,
+    "sigma": 5.0,
+    "drift": 0.8,
+    "n_peaks": 10
+  },
+  "evaluation": "Heldout trajectory seeds 173/281; same frames and fixed target-free motion calibration",
+  "sensor_input": "intensity_frames_not_DVS"
+}

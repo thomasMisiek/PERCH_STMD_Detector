@@ -1,0 +1,21 @@
+{
+  "raw": {
+    "mode": "raw",
+    "gain": 0,
+    "decay": 0
+  },
+  "leaky": {
+    "mode": "leaky",
+    "decay": 0.45,
+    "neighborhood": 11.0,
+    "inhibition": 0.0,
+    "gain": 0.5
+  },
+  "annulus": {
+    "mode": "annulus",
+    "decay": 0.92,
+    "neighborhood": 11.0,
+    "inhibition": 1.3,
+    "gain": 70.0
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "low",
+  "params": {
+    "decay": 0.85,
+    "gain": 0.3,
+    "sigma": 5,
+    "drift": 0.8,
+    "n_peaks": 10,
+    "winner_boost": 0.45
+  },
+  "source": "train paths 41,92 on cached 14-bank candidates"
+}

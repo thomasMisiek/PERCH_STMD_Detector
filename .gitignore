@@ -1,9 +1,6 @@
 __pycache__/
-.pytest_cache/
-*.py[cod]
+*.pyc
 .venv/
-venv/
-.DS_Store
-outputs/
-media/_gif_*/
-media/_tmp*/
+.pytest_cache/
+results/tmp_*
+media/palette_tmp.png

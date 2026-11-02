@@ -1,0 +1,50 @@
+{
+  "training_seeds": [
+    41,
+    92
+  ],
+  "heldout_seeds": [
+    173,
+    281
+  ],
+  "full_video_frames": 365,
+  "fps": 25,
+  "eval_frames": "100\u2013364",
+  "assumed_horizontal_fov_deg": 84,
+  "angular_error": "Angle between normalized (x-cx,y-cy,f) camera rays, f=160/tan(42\u00b0), Euclidean 3D angle <= 5\u00b0",
+  "forced_choice": "one x,y candidate every frame where sensory peaks exist",
+  "no_target_gate_threshold": "99th percentile of no-target maximum evidence, calibration frames 25\u201399",
+  "thresholds": {
+    "raw": 1.01226806640625,
+    "leaky": 1.013073205947876,
+    "annulus": 1.01226806640625
+  },
+  "selected": {
+    "raw": {
+      "mode": "raw",
+      "gain": 0,
+      "decay": 0
+    },
+    "leaky": {
+      "mode": "leaky",
+      "decay": 0.45,
+      "neighborhood": 11.0,
+      "inhibition": 0.0,
+      "gain": 0.5
+    },
+    "annulus": {
+      "mode": "annulus",
+      "decay": 0.92,
+      "neighborhood": 11.0,
+      "inhibition": 1.3,
+      "gain": 70.0
+    }
+  },
+  "random_baseline": "uniform x/y sampled in 12..308 rectangle, 300 simulations per trajectory; always outputs a position",
+  "target_diameter_px": {
+    "50cm": 2.62,
+    "1m": 1.31,
+    "2m": 0.65
+  },
+  "note": "Simulated 6mm mosquito injected into 320x320 images after area downsampling; this is not a physical event-camera measurement."
+}

@@ -1,0 +1,3 @@
+IMPORTANT: Only the relative trajectory identities change from training to heldout evaluation. Background video, simulation calibration, and preprocessed texture are identical in train and test. Results are an exploratory demonstration, not a generalization claim.
+
+Video rights: verify permission to redistribute the household footage before uploading a public repository. The script itself is reproducible if the video file is placed at src/data/source_indoor_walking.mp4.

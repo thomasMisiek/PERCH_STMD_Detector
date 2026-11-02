@@ -1,0 +1,8 @@
+{
+  "mode": "annulus",
+  "decay": 0.92,
+  "neighborhood": 11.0,
+  "inhibition": 1.3,
+  "gain": 70.0,
+  "n_peaks": 25
+}
